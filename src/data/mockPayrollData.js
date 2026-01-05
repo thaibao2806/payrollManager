@@ -9,7 +9,7 @@ export const mockPayrollData = [
     nationalDefense: 25000000,
     economy: "",
     nationalDefenseEconomy: "",
-    manager: "Nguyễn Văn A",
+    manager: "Nguyễn Văn A, Trần Văn B",
     note: "Hoàn thành đúng tiến độ",
     progress: 85,
     remainingBudget: 12000000,

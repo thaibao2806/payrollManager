@@ -21,6 +21,8 @@ import {
   InputNumber,
   Rate,
   Descriptions,
+  App,
+  Select,
 } from "antd";
 import {
   SearchOutlined,
@@ -48,6 +50,11 @@ import { saveAs } from "file-saver";
 import { mockPayrollData } from "../../data/mockPayrollData";
 import AssessmentModal from "./AssessmentModal";
 import ViewAssessmentModal from "./ViewAssessmentModal";
+import {
+  deletePayrollManager,
+  filterPayrolls,
+  getPayrollDashboard,
+} from "../../services/apiPayroll/Payroll";
 
 const { RangePicker } = DatePicker;
 const { TextArea } = Input;
@@ -82,9 +89,11 @@ const Payroll = () => {
   const [dataSource, setDataSource] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterDrawerVisible, setFilterDrawerVisible] = useState(false);
-  const [mobileActionDrawerVisible, setMobileActionDrawerVisible] = useState(false);
+  const [mobileActionDrawerVisible, setMobileActionDrawerVisible] =
+    useState(false);
   const [assessmentModalVisible, setAssessmentModalVisible] = useState(false);
-  const [viewAssessmentModalVisible, setViewAssessmentModalVisible] = useState(false);
+  const [viewAssessmentModalVisible, setViewAssessmentModalVisible] =
+    useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [assessmentForm] = Form.useForm();
   const [pagination, setPagination] = useState({
@@ -94,6 +103,7 @@ const Payroll = () => {
   });
   const navigate = useNavigate();
 
+  const { modal } = App.useApp();
 
   // State cho summary statistics
   const [summaryStats, setSummaryStats] = useState({
@@ -102,7 +112,7 @@ const Payroll = () => {
   });
 
   const { width } = useWindowSize();
-  
+
   // Responsive breakpoints
   const isMobile = width <= 768;
   const isTablet = width > 768 && width <= 1024;
@@ -110,108 +120,93 @@ const Payroll = () => {
 
   useEffect(() => {
     fetchData(pagination.current, pagination.pageSize);
+    getTotalAmount();
   }, []);
 
-  // const fetchData = async (page = 1, pageSize = 10) => {
-  //   try {
-  //     setLoading(true);
-  //     const {
-  //       documentNumber,
-  //       productName,
-  //       managementUnit,
-  //       department,
-  //       dateRange,
-  //     } = filters;
-  //     const fromDate = dateRange ? dateRange[0].format("YYYY-MM-DD") : null;
-  //     const toDate = dateRange ? dateRange[1].format("YYYY-MM-DD") : null;
+  const getTotalAmount = async () => {
+    setLoading(true);
+    try {
+      const res = await getPayrollDashboard();
 
-  //     let res = await fillterPayroll(
-  //       documentNumber,
-  //       productName,
-  //       department,
-  //       managementUnit,
-  //       fromDate,
-  //       toDate,
-  //       "",
-  //       page,
-  //       pageSize
-  //     );
-  //     if (res && res.status === 200) {
-  //       let { items, totalCount } = res.data.data;
+      if (res?.status === 200) {
+        const data = res.data?.data || {};
 
-  //       // Thêm STT và key
-  //       let dataWithStt = items.map((item, index) => ({
-  //         ...item,
-  //         key: item.id,
-  //         stt: (page - 1) * pageSize + index + 1,
-  //         // Thêm dữ liệu mẫu cho tiến độ và quỹ lương còn lại
-  //         progress: item.progress || Math.floor(Math.random() * 100),
-  //         remainingBudget: item.remainingBudget || Math.floor(Math.random() * 50000000),
-  //         // Dữ liệu đánh giá mẫu
-  //         assessment: item.assessment || null,
-  //       }));
-
-  //       setDataSource(dataWithStt);
-  //       setPagination({ current: page, pageSize, total: totalCount });
-
-  //       // Tính toán summary statistics
-  //       calculateSummaryStats(dataWithStt);
-  //     }
-  //   } catch (error) {
-  //     console.error("Lỗi khi gọi API:", error);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
+        setSummaryStats({
+          totalProducts: data.totalProducts ?? 0,
+          totalPayroll: data.totalFund ?? 0,
+        });
+      }
+    } catch (error) {
+      console.error("getPayrollDashboard error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchData = async (page = 1, pageSize = 10) => {
-  setLoading(true);
+    try {
+      setLoading(true);
+      const { payrollType, productName, managerName } = filters;
 
-  setTimeout(() => {
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
+      let res = await filterPayrolls(
+        payrollType,
+        productName,
+        managerName,
+        page,
+        pageSize
+      );
+      if (res && res.status === 200) {
+        console.log(res);
+        let { items, totalCount } = res.data.data;
 
-    const pagedData = mockPayrollData.slice(start, end).map((item, index) => ({
-      ...item,
-      stt: start + index + 1,
-    }));
+        // Thêm STT và key
+        let dataWithStt = items.map((item, index) => ({
+          ...item,
+          id: item.id,
+          key: item.id,
+          stt: (page - 1) * pageSize + index + 1,
+          // Thêm dữ liệu mẫu cho tiến độ và quỹ lương còn lại
+          progress: item.progress || 0,
+          remainingBudget: item.remainingBudget || 0,
+          // Dữ liệu đánh giá mẫu
+          assessment: item.assessment || null,
+        }));
 
-    setDataSource(pagedData);
-    setPagination({
-      current: page,
-      pageSize,
-      total: mockPayrollData.length,
-    });
+        setDataSource(dataWithStt);
+        setPagination({ current: page, pageSize, total: totalCount });
 
-    calculateSummaryStats(pagedData);
-    setLoading(false);
-  }, 500); // giả lập loading
-};
-
+        // Tính toán summary statistics
+        calculateSummaryStats(dataWithStt);
+      }
+    } catch (error) {
+      console.error("Lỗi khi gọi API:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Hàm tính toán tổng số sản phẩm và tổng quỹ lương
   const calculateSummaryStats = (data) => {
     const totalProducts = data.length;
-    
+
     const totalPayroll = data.reduce((sum, item) => {
       const nationalDefense = parseFloat(item.nationalDefense) || 0;
       const economy = parseFloat(item.economy) || 0;
-      const nationalDefenseEconomy = parseFloat(item.nationalDefenseEconomy) || 0;
+      const nationalDefenseEconomy =
+        parseFloat(item.nationalDefenseEconomy) || 0;
       return sum + nationalDefense + economy + nationalDefenseEconomy;
     }, 0);
 
-    setSummaryStats({
-      totalProducts,
-      totalPayroll,
-    });
+    // setSummaryStats({
+    //   totalProducts,
+    //   totalPayroll,
+    // });
   };
 
   const [filters, setFilters] = useState({
-    dateRange: null,
-    documentNumber: "",
     productName: "",
-    managementUnit: "",
-    department: "",
+    managerName: "",
+    payrollType: "",
   });
 
   // Hàm xử lý đánh giá
@@ -233,7 +228,7 @@ const Payroll = () => {
 
   // Format số tiền
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return new Intl.NumberFormat("vi-VN").format(amount);
   };
 
   const columns = [
@@ -268,80 +263,96 @@ const Payroll = () => {
     },
     {
       title: "Người quản lý",
-      dataIndex: "manager",
+      dataIndex: "managers",
       width: isMobile ? 100 : 120,
     },
     {
       title: "Đánh giá chất lượng",
-      dataIndex: "qualityAssessment",
+      key: "qualityAssessment",
       width: isMobile ? 280 : 320,
-      render: (_, record) => (
-        <div style={{ padding: "8px 0" }}>
-          <Space direction="vertical" size="small" style={{ width: "100%" }}>
-            {/* Nút hành động */}
-            <Space size="small">
-              <Button
-                type="primary"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => handleAssessment(record)}
-              >
-                Đánh giá
-              </Button>
-              <Button
-                size="small"
-                icon={<EyeOutlined />}
-                onClick={() => navigate(`/payroll/assessment/${record.id}`)}
-                disabled={!record.assessment}
-              >
-                Xem
-              </Button>
+      render: (_, record) => {
+        const progress = record.progress ?? 0;
+        const remainingFund = record.remainingFund ?? 0;
+        const hasEvaluation = record.hasEvaluation;
 
-            </Space>
-            
-            {/* Tiến độ */}
-            <div>
-              <div style={{ 
-                fontSize: 12, 
-                color: "#666", 
-                marginBottom: 4,
-                display: "flex",
-                justifyContent: "space-between"
-              }}>
-                <span>Tiến độ:</span>
-                <span style={{ fontWeight: 600 }}>{record.progress}%</span>
+        return (
+          <div style={{ padding: "8px 0" }}>
+            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+              {/* ===== ACTION ===== */}
+              <Space size="small">
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => handleAssessment(record)}
+                  disabled={remainingFund <= 0}
+                >
+                  Đánh giá
+                </Button>
+
+                <Button
+                  size="small"
+                  icon={<EyeOutlined />}
+                  onClick={() => navigate(`/payroll/assessment/${record.id}`)}
+                  disabled={!hasEvaluation}
+                >
+                  Xem
+                </Button>
+              </Space>
+
+              {/* ===== PROGRESS ===== */}
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#666",
+                    marginBottom: 4,
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Tiến độ:</span>
+                  <span style={{ fontWeight: 600 }}>{progress}%</span>
+                </div>
+
+                <Progress
+                  percent={progress}
+                  size="small"
+                  status={progress === 100 ? "success" : "active"}
+                />
               </div>
-              <Progress
-                percent={record.progress}
-                size="small"
-                strokeColor={{
-                  '0%': '#108ee9',
-                  '100%': '#87d068',
+
+              {/* ===== REMAINING FUND ===== */}
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#666",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
-                status={record.progress === 100 ? "success" : "active"}
-              />
-            </div>
-            
-            {/* Quỹ lương còn lại */}
-            <div style={{
-              fontSize: 12,
-              color: "#666",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center"
-            }}>
-              <span>Quỹ lương còn lại:</span>
-              <span style={{ 
-                fontWeight: 600, 
-                color: record.remainingBudget > 10000000 ? "#52c41a" : "#ff4d4f" 
-              }}>
-                {formatCurrency(record.remainingBudget)} VNĐ
-              </span>
-            </div>
-          </Space>
-        </div>
-      ),
+              >
+                <span>Quỹ lương còn lại:</span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color:
+                      remainingFund > 10_000_000
+                        ? "#52c41a"
+                        : remainingFund > 0
+                        ? "#faad14"
+                        : "#ff4d4f",
+                  }}
+                >
+                  {formatCurrency(remainingFund)} VNĐ
+                </span>
+              </div>
+            </Space>
+          </div>
+        );
+      },
     },
+
     {
       title: "Ghi chú",
       dataIndex: "note",
@@ -365,7 +376,7 @@ const Payroll = () => {
       width: 200,
       render: (_, record) => (
         <div>
-          <Link 
+          <Link
             to={`/pl/phieu-giao-viec-chi-tiet/${record.id}`}
             style={{ fontWeight: 600, fontSize: 14 }}
           >
@@ -398,7 +409,6 @@ const Payroll = () => {
             >
               Xem
             </Button>
-
           </Space>
         </div>
       ),
@@ -429,37 +439,15 @@ const Payroll = () => {
   };
 
   // Xử lý submit đánh giá
-  const handleAssessmentSubmit = () => {
-    assessmentForm.validateFields().then((values) => {
-      console.log("Đánh giá:", values, "cho bản ghi:", selectedRecord);
-      
-      // Cập nhật dữ liệu trong dataSource
-      const updatedDataSource = dataSource.map(item => {
-        if (item.id === selectedRecord.id) {
-          return {
-            ...item,
-            assessment: {
-              ...values,
-              assessmentDate: new Date().toISOString(),
-              assessor: "Người đánh giá" // Thay bằng user thực tế
-            }
-          };
-        }
-        return item;
-      });
-      
-      setDataSource(updatedDataSource);
-      
-      Modal.success({
-        title: "Thành công",
-        content: "Đánh giá đã được lưu thành công!",
-      });
-      
-      setAssessmentModalVisible(false);
-      assessmentForm.resetFields();
-    }).catch((errorInfo) => {
-      console.log("Validation Failed:", errorInfo);
+  const handleAssessmentSubmit = async (data) => {
+    fetchData(pagination.current, pagination.pageSize);
+
+    Modal.success({
+      title: "Thành công",
+      content: "Đánh giá đã được lưu thành công!",
     });
+
+    setAssessmentModalVisible(false);
   };
 
   // Xử lý chọn dòng
@@ -480,23 +468,7 @@ const Payroll = () => {
       return;
     }
 
-    const selectedRows = dataSource.filter((item) =>
-      selectedRowKeys.includes(item.key)
-    );
-
-    const approvedRows = selectedRows.filter(
-      (item) => item.approvalStatus === "approved"
-    );
-
-    if (approvedRows.length > 0) {
-      Modal.warning({
-        title: "Không thể xóa phiếu đã duyệt",
-        content: `Có ${approvedRows.length} phiếu đã được duyệt. Vui lòng bỏ chọn chúng trước khi xóa.`,
-      });
-      return;
-    }
-
-    Modal.confirm({
+    modal.confirm({
       title: "Xác nhận xóa",
       content: `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} dòng này không?`,
       okText: "Xóa",
@@ -504,27 +476,23 @@ const Payroll = () => {
       onOk: async () => {
         try {
           setLoading(true);
-
           await Promise.all(
-            selectedRowKeys.map((id) => deleteAssignmetSlip(id))
+            selectedRowKeys.map((id) => deletePayrollManager(id))
           );
-
-          const remainingData = dataSource.filter(
-            (item) => !selectedRowKeys.includes(item.key)
-          );
-
-          setDataSource(remainingData);
+          fetchData(pagination.current, pagination.pageSize);
+          getTotalAmount();
           setSelectedRowKeys([]);
           setMobileActionDrawerVisible(false);
+
           Modal.success({
             title: "Xóa thành công",
-            content: `${selectedRowKeys.length} dòng đã được xóa.`,
+            content: "Dữ liệu đã được xóa.",
           });
         } catch (error) {
-          console.error("Lỗi khi xóa:", error);
+          console.error(error);
           Modal.error({
             title: "Lỗi",
-            content: "Đã xảy ra lỗi khi xóa. Vui lòng thử lại.",
+            content: "Không thể xóa dữ liệu. Vui lòng kiểm tra backend.",
           });
         } finally {
           setLoading(false);
@@ -601,23 +569,23 @@ const Payroll = () => {
       <Menu.Item key="add" icon={<PlusOutlined />} onClick={handleAdd}>
         Thêm mới
       </Menu.Item>
-      <Menu.Item 
-        key="delete" 
-        icon={<DeleteOutlined />} 
+      <Menu.Item
+        key="delete"
+        icon={<DeleteOutlined />}
         onClick={handleDelete}
         disabled={selectedRowKeys.length === 0}
         danger
       >
         Xóa ({selectedRowKeys.length})
       </Menu.Item>
-      <Menu.Item 
-        key="export" 
-        icon={<FileExcelOutlined />} 
+      {/* <Menu.Item
+        key="export"
+        icon={<FileExcelOutlined />}
         onClick={handleExportExcel}
         disabled={selectedRowKeys.length === 0}
       >
         Xuất Excel ({selectedRowKeys.length})
-      </Menu.Item>
+      </Menu.Item> */}
     </Menu>
   );
 
@@ -625,7 +593,7 @@ const Payroll = () => {
   const renderFilterForm = () => (
     <div style={{ padding: isMobile ? 12 : 16 }}>
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} md={8}>
+        {/* <Col xs={24} sm={12} md={8}>
           <label style={{ display: "block", marginBottom: 4, fontSize: isMobile ? 12 : 14 }}>
             Thời gian
           </label>
@@ -636,30 +604,63 @@ const Payroll = () => {
             onChange={(value) => handleFilterChange("dateRange", value)}
             size={isMobile ? "small" : "default"}
           />
-        </Col>
+        </Col> */}
         <Col xs={24} sm={12} md={8}>
-          <label style={{ display: "block", marginBottom: 4, fontSize: isMobile ? 12 : 14 }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 4,
+              fontSize: isMobile ? 12 : 14,
+            }}
+          >
+            Loại quỹ lương
+          </label>
+          <Select
+            placeholder="Chọn loại quỹ lương"
+            value={filters.payrollType} // gán value từ filters
+            onChange={(value) => handleFilterChange("payrollType", value)}
+            size={isMobile ? "small" : "default"}
+            style={{ width: "100%" }}
+          >
+            <Select.Option value="nationalDefense">Quốc phòng</Select.Option>
+            <Select.Option value="economy">Kinh tế</Select.Option>
+            <Select.Option value="nationalDefenseEconomy">
+              Quốc phòng yếu tố kinh tế
+            </Select.Option>
+          </Select>
+        </Col>
+
+        <Col xs={24} sm={12} md={8}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 4,
+              fontSize: isMobile ? 12 : 14,
+            }}
+          >
             Tên sản phẩm
           </label>
           <Input
             placeholder="Tên sản phẩm"
             value={filters.productName}
-            onChange={(e) =>
-              handleFilterChange("productName", e.target.value)
-            }
+            onChange={(e) => handleFilterChange("productName", e.target.value)}
             size={isMobile ? "small" : "default"}
           />
         </Col>
         <Col xs={24} sm={12} md={8}>
-          <label style={{ display: "block", marginBottom: 4, fontSize: isMobile ? 12 : 14 }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 4,
+              fontSize: isMobile ? 12 : 14,
+            }}
+          >
             Người quản lý
           </label>
           <Input
             placeholder="Người quản lý"
-            value={filters.manager}
-            onChange={(e) =>
-              handleFilterChange("manager", e.target.value)
-            }
+            value={filters.managers}
+            onChange={(e) => handleFilterChange("managers", e.target.value)}
             size={isMobile ? "small" : "default"}
           />
         </Col>
@@ -687,51 +688,66 @@ const Payroll = () => {
         <Card
           key={item.key}
           size="small"
-          style={{ 
+          style={{
             marginBottom: 12,
-            border: selectedRowKeys.includes(item.key) ? "2px solid #1890ff" : "1px solid #f0f0f0"
+            border: selectedRowKeys.includes(item.key)
+              ? "2px solid #1890ff"
+              : "1px solid #f0f0f0",
           }}
           bodyStyle={{ padding: 12 }}
           onClick={() => {
             const newSelection = selectedRowKeys.includes(item.key)
-              ? selectedRowKeys.filter(key => key !== item.key)
+              ? selectedRowKeys.filter((key) => key !== item.key)
               : [...selectedRowKeys, item.key];
             setSelectedRowKeys(newSelection);
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
             <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 12, color: "#666", marginRight: 8 }}>#{item.stt}</span>
-                <Link 
-                  to={`/pl/phieu-giao-viec-chi-tiet/${item.id}`}
-                  style={{ fontWeight: 600, fontSize: 14 }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {item.documentNumber}
-                </Link>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  marginBottom: 4,
+                }}
+              >
+                <span style={{ fontSize: 12, color: "#666", marginRight: 8 }}>
+                  #{item.stt}
+                </span>
               </div>
-              
+
               <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>
-                <strong>Ngày:</strong> {item.documentDate 
+                <strong>Ngày:</strong>{" "}
+                {item.documentDate
                   ? new Date(item.documentDate).toLocaleDateString("vi-VN")
                   : "---"}
               </div>
-              
+
               <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>
                 <strong>Sản phẩm:</strong> {item.productName}
               </div>
-              
+
               <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
                 <strong>Tiến độ:</strong> {item.progress}%
               </div>
-              
-              <Progress percent={item.progress} size="small" style={{ marginBottom: 8 }} />
-              
+
+              <Progress
+                percent={item.progress}
+                size="small"
+                style={{ marginBottom: 8 }}
+              />
+
               <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-                <strong>Còn lại:</strong> {formatCurrency(item.remainingBudget)} VNĐ
+                <strong>Còn lại:</strong> {formatCurrency(item.remainingBudget)}{" "}
+                VNĐ
               </div>
-              
+
               <Space size="small" onClick={(e) => e.stopPropagation()}>
                 <Button
                   type="primary"
@@ -744,31 +760,38 @@ const Payroll = () => {
                 <Button
                   size="small"
                   icon={<EyeOutlined />}
-                  onClick={() => navigate(`/fn/payroll-managent-detail/${item.id}`)}
+                  onClick={() =>
+                    navigate(`/fn/payroll-managent-detail/${item.id}`)
+                  }
                   disabled={!item.assessment}
                 >
                   Xem
                 </Button>
-
               </Space>
             </div>
-            
+
             <div style={{ marginLeft: 12 }}>
-              <Tag 
+              <Tag
                 color={
-                  item.approvalStatus === "approved" ? "green" : 
-                  item.approvalStatus === "rejected" ? "red" : "orange"
+                  item.approvalStatus === "approved"
+                    ? "green"
+                    : item.approvalStatus === "rejected"
+                    ? "red"
+                    : "orange"
                 }
                 style={{ fontSize: 10 }}
               >
-                {item.approvalStatus === "approved" ? "Đã duyệt" : 
-                 item.approvalStatus === "rejected" ? "Từ chối" : "Chờ duyệt"}
+                {item.approvalStatus === "approved"
+                  ? "Đã duyệt"
+                  : item.approvalStatus === "rejected"
+                  ? "Từ chối"
+                  : "Chờ duyệt"}
               </Tag>
             </div>
           </div>
         </Card>
       ))}
-      
+
       {/* Mobile Pagination */}
       <div style={{ textAlign: "center", marginTop: 16 }}>
         <Button
@@ -779,10 +802,14 @@ const Payroll = () => {
           Trang trước
         </Button>
         <span style={{ margin: "0 12px", fontSize: 12 }}>
-          {pagination.current} / {Math.ceil(pagination.total / pagination.pageSize)}
+          {pagination.current} /{" "}
+          {Math.ceil(pagination.total / pagination.pageSize)}
         </span>
         <Button
-          disabled={pagination.current >= Math.ceil(pagination.total / pagination.pageSize)}
+          disabled={
+            pagination.current >=
+            Math.ceil(pagination.total / pagination.pageSize)
+          }
           onClick={() => fetchData(pagination.current + 1, pagination.pageSize)}
           size="small"
         >
@@ -805,14 +832,16 @@ const Payroll = () => {
           gap: isMobile ? 8 : 0,
         }}
       >
-        <h1 style={{ 
-          margin: 0, 
-          fontSize: isMobile ? 18 : 24,
-          flex: isMobile ? "1 1 100%" : "auto"
-        }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: isMobile ? 18 : 24,
+            flex: isMobile ? "1 1 100%" : "auto",
+          }}
+        >
           Quản lý tiền lương
         </h1>
-        
+
         {isMobile ? (
           <Space size="small">
             <Button
@@ -821,7 +850,7 @@ const Payroll = () => {
               size="small"
               style={{ background: "#e6f4fb", color: "#0700ad" }}
             />
-            <Dropdown overlay={actionMenu} trigger={['click']}>
+            <Dropdown overlay={actionMenu} trigger={["click"]}>
               <Button icon={<MoreOutlined />} size="small" />
             </Dropdown>
           </Space>
@@ -831,7 +860,11 @@ const Payroll = () => {
               <Button
                 icon={<SearchOutlined />}
                 onClick={() => setShowFilters(!showFilters)}
-                style={{ background: "#e6f4fb", color: "#0700ad", marginRight: 5 }}
+                style={{
+                  background: "#e6f4fb",
+                  color: "#0700ad",
+                  marginRight: 5,
+                }}
                 size={isTablet ? "small" : "default"}
               />
             </Tooltip>
@@ -839,7 +872,11 @@ const Payroll = () => {
               <Button
                 onClick={handleAdd}
                 icon={<PlusOutlined />}
-                style={{ background: "#e6f4fb", color: "#0700ad", marginRight: 5 }}
+                style={{
+                  background: "#e6f4fb",
+                  color: "#0700ad",
+                  marginRight: 5,
+                }}
                 size={isTablet ? "small" : "default"}
               />
             </Tooltip>
@@ -850,10 +887,10 @@ const Payroll = () => {
                 onClick={handleDelete}
                 disabled={selectedRowKeys.length === 0}
                 size={isTablet ? "small" : "default"}
-                style={{marginRight: 5}}
+                style={{ marginRight: 5 }}
               />
             </Tooltip>
-            <Tooltip title="Xuất excel">
+            {/* <Tooltip title="Xuất excel">
               <Button
                 icon={<FileExcelOutlined />}
                 onClick={handleExportExcel}
@@ -861,7 +898,7 @@ const Payroll = () => {
                 size={isTablet ? "small" : "default"}
                 disabled={selectedRowKeys.length === 0}
               />
-            </Tooltip>
+            </Tooltip> */}
           </Space>
         )}
       </div>
@@ -967,7 +1004,7 @@ const Payroll = () => {
             showSizeChanger: !isTablet,
             showQuickJumper: !isTablet,
             size: isTablet ? "small" : "default",
-            showTotal: (total, range) => 
+            showTotal: (total, range) =>
               `${range[0]}-${range[1]} của ${total} mục`,
           }}
           onChange={(pagination) => {
@@ -1017,7 +1054,6 @@ const Payroll = () => {
         open={assessmentModalVisible}
         onCancel={() => setAssessmentModalVisible(false)}
         onSubmit={handleAssessmentSubmit}
-        form={assessmentForm}
         record={selectedRecord}
       />
 

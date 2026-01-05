@@ -31,6 +31,10 @@ import {
 } from "../../services/apiApprovals";
 import { useSelector } from "react-redux";
 import { addFollower } from "../../services/apiFollower";
+import {
+  addPayrollManager,
+  updatePayrollManager,
+} from "../../services/apiPayroll/Payroll";
 dayjs.extend(customParseFormat);
 
 const approvalStatusOptions = [
@@ -84,64 +88,24 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
 
   useEffect(() => {
     if (open) {
-      if (!initialValues) {
-        //getVoucherNo();
-      }
-
       form.setFieldsValue(initialValues || {});
-      setIsEditApproval(!!initialValues?.type);
-      setMonthYear(dayjs(initialValues?.documentDate || dayjs()));
-      if (initialValues?.details?.length) {
-        const daysInMonth = dayjs(initialValues.documentDate).daysInMonth();
-        const columns = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+      const managerNames =
+        initialValues.managers?.split(",").map((x) => x.trim()) || [];
 
-        const formattedDetails = initialValues.details.map((item, index) => ({
-          key: `${Date.now()}_${index}`,
-          stt: index + 1,
-          content: item.content || "",
-          unit: item.unit || "",
-          quantity: item.quantity || "",
-          workDay: item.workDay || "",
-          note: item.note || "",
-          ...columns.reduce((acc, day) => {
-            acc[`d${day}`] = item[`d${day}`] || "";
-            return acc;
-          }, {}),
-        }));
+      const managerValues = dataUser
+        .filter((u) => managerNames.includes(u.label))
+        .map((u) => u.value);
 
-        setTableData(formattedDetails);
-      } else {
-        setTableData([]);
+      form.setFieldsValue({
+        ...initialValues,
+        manager: managerValues,
+      });
+      if (initialValues?.payrollType) {
+        setSalaryType(initialValues.payrollType);
       }
-      getApprovalByModulePage();
       getUser();
-      if (initialValues) {
-        getApprovals(initialValues.id);
-      }
     }
   }, [open, initialValues, form]);
-
-  useEffect(() => {
-    if (open && !initialValues && approvalNumber > 0) {
-      setApprovers(Array(approvalNumber).fill({ userName: null }));
-    }
-  }, [approvalNumber, open, initialValues]);
-
-  const getApprovals = async (refId) => {
-    try {
-      let res = await getApprovalsByRef(refId, "PGV");
-      if (res && res.status === 200) {
-        const list = res.data.data.map((ap) => ({
-          id: ap.id,
-          username: ap.userName,
-          status: ap.status,
-          note: ap.note,
-        }));
-        setApprovers(list);
-        form.setFieldsValue({ approvers: list });
-      }
-    } catch (error) {}
-  };
 
   const getUser = async () => {
     try {
@@ -159,51 +123,6 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
     }
   };
 
-  const getApprovalByModulePage = async () => {
-    try {
-      let res = await getApprovalSetting("PL", "pl-phieu-giao-viec");
-      if (res && res.status === 200) {
-        setApprovalNumber(res.data.data.approvalNumber);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const getVoucherNo = async () => {
-    try {
-      let res = await getDocumentNumber("PGV");
-      if (res && res.status === 200) {
-        form.setFieldsValue({ documentNumber: res.data.data.code });
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const handleMonthChange = (date) => {
-    setMonthYear(date);
-    if (!date) return;
-
-    const daysInMonth = date.daysInMonth();
-    const columns = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  };
-
-  const handleAddRow = () => {
-    const daysInMonth = monthYear?.daysInMonth() || 0;
-    const newKey = `${Date.now()}`;
-    const columns = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-    const newRow = {
-      key: newKey,
-      stt: tableData.length + 1,
-      ...columns.reduce((acc, day) => {
-        acc[`d${day}`] = "";
-        return acc;
-      }, {}),
-    };
-    setTableData((prev) => [...prev, newRow]);
-  };
-
   const handleDeleteRow = (key) => {
     setTableData((prev) => prev.filter((item) => item.key !== key));
   };
@@ -216,195 +135,52 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
     );
   };
 
-  const generateColumns = () => {
-    const baseColumns = [
-      {
-        title: "",
-        dataIndex: "action",
-        width: isMobile ? 35 : 40,
-        fixed: isMobile ? "left" : false,
-        render: (_, record) => (
-          <Tooltip title="Xóa dòng">
-            <Button
-              icon={<DeleteOutlined />}
-              size={isMobile ? "small" : "small"}
-              danger
-              onClick={() => handleDeleteRow(record.key)}
-            />
-          </Tooltip>
-        ),
-      },
-      {
-        title: "STT",
-        dataIndex: "stt",
-        width: isMobile ? 45 : 50,
-        fixed: isMobile ? "left" : false,
-      },
-      {
-        title: "Nội dung",
-        dataIndex: "content",
-        width: isMobile ? 150 : 200,
-        render: (_, record) => (
-          <Input
-            value={record.content}
-            size={isMobile ? "small" : "default"}
-            onChange={(e) =>
-              handleInputChange(record.key, "content", e.target.value)
-            }
-          />
-        ),
-      },
-      {
-        title: "ĐVT",
-        dataIndex: "unit",
-        width: isMobile ? 80 : 100,
-        render: (_, record) => (
-          <Input
-            value={record.unit}
-            size={isMobile ? "small" : "default"}
-            onChange={(e) =>
-              handleInputChange(record.key, "unit", e.target.value)
-            }
-          />
-        ),
-      },
-      {
-        title: "Số lượng",
-        dataIndex: "quantity",
-        width: isMobile ? 90 : 120,
-        render: (_, record) => (
-          <Input
-            value={record.quantity}
-            size={isMobile ? "small" : "default"}
-            onChange={(e) =>
-              handleInputChange(record.key, "quantity", e.target.value)
-            }
-          />
-        ),
-      },
-      {
-        title: "N/Công",
-        dataIndex: "workDay",
-        width: isMobile ? 80 : 100,
-        render: (_, record) => (
-          <Input
-            value={record.workDay}
-            size={isMobile ? "small" : "default"}
-            onChange={(e) =>
-              handleInputChange(record.key, "workDay", e.target.value)
-            }
-          />
-        ),
-      },
-      {
-        title: "Ghi chú",
-        dataIndex: "note",
-        width: isMobile ? 120 : 150,
-        render: (_, record) => (
-          <Input
-            value={record.note}
-            size={isMobile ? "small" : "default"}
-            onChange={(e) =>
-              handleInputChange(record.key, "note", e.target.value)
-            }
-          />
-        ),
-      },
-    ];
-
-    return baseColumns;
-  };
-
-  const handleAddApprovals = async (refId, documentNumber) => {
-    try {
-      const approversData = form.getFieldValue("approvers") || [];
-
-      const formattedApprovers = approversData.map((item, index) => {
-        const user = dataUser.find((u) => u.value === item.username);
-        return {
-          userName: item.username,
-          fullName: user?.label || "",
-          level: index + 1,
-        };
-      });
-
-      const res = await createApprovals(
-        refId,
-        "PGV",
-        formattedApprovers,
-        documentNumber,
-        `/pl/phieu-giao-viec-chi-tiet/${refId}?type=PGV`
-      );
-      if (res && res.status === 200) {
-        console.log("Tạo danh sách duyệt thành công");
-      }
-    } catch (error) {
-      console.error("Lỗi khi tạo duyệt:", error);
-    }
-  };
-
-  const handleUpdateApprovals = async () => {
-    try {
-      const approversData = form.getFieldValue("approvers") || [];
-      const updatePromises = approversData.map((item) => {
-        if (item.id) {
-          return updateStatusApprovals(item.id, item.status, item.note);
-        }
-        return null;
-      });
-
-      const responses = await Promise.all(updatePromises.filter(Boolean));
-    } catch (error) {
-      console.error("Lỗi cập nhật phê duyệt:", error);
-      notification.error({
-        message: "Cập nhật thất bại",
-        description: "Có lỗi xảy ra khi cập nhật trạng thái duyệt.",
-      });
-    }
-  };
-
   const handleOk = () => {
     if (!initialValues) {
       form.validateFields().then(async (values) => {
         try {
           setLoading(true);
+
+          // ===== BUILD MANAGERS =====
+          const managers = values.manager.map((userName, index) => {
+            const u = dataUser.find((x) => x.value === userName);
+
+            return {
+              userId: u?.id,
+              userName: u?.value,
+              fullName: u?.label,
+              isPrimary: index === 0, // người đầu tiên là quản lý chính
+            };
+          });
           const payload = {
             ...values,
-            documentDate: monthYear.toISOString(),
+            nationalDefense: values.nationalDefense || 0,
+            economy: values.economy || 0,
+            nationalDefenseEconomy: values.nationalDefenseEconomy || 0,
             note: values.note || "",
-            details: tableData.map((item) => ({
-              content: item.content || "",
-              unit: item.unit || "",
-              quantity: Number(item.quantity) || 0,
-              workDay: Number(item.workDay) || 0,
-              note: item.note || "",
-            })),
+            managers,
           };
 
-          let res = await addPayroll(
-            payload.documentNumber,
+          let res = await addPayrollManager(
             payload.productName,
-            payload.documentDate,
-            payload.department,
-            payload.managementUnit,
+            payload.nationalDefense,
+            payload.economy,
+            payload.nationalDefenseEconomy,
+            payload.payrollType,
             payload.note,
-            payload.details
+            managers
           );
           if (res && res.status === 200) {
-            await handleAddApprovals(res.data.data, payload.documentNumber);
-            const newFollowers = dataUser.find(u => u.value === user.data.userName);
-            await addFollower(
-              res.data.data,
-              "Payroll",
-               payload.documentNumber,
-               [
-                {
-                  userId: newFollowers.id,
-                  userName: newFollowers.value,
-                  fullName: user.data.fullName,
-                }
-              ]
-            )
+            const newFollowers = dataUser.find(
+              (u) => u.value === user.data.userName
+            );
+            await addFollower(res.data.data, "Payroll", payload.productName, [
+              {
+                userId: newFollowers.id,
+                userName: newFollowers.value,
+                fullName: user.data.fullName,
+              },
+            ]);
             onSubmit();
             form.resetFields();
             setMonthYear(dayjs());
@@ -424,8 +200,7 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
               placement: isMobile ? "top" : "topRight",
             });
           }
-        }
-        finally{
+        } finally {
           setLoading(false);
         }
       });
@@ -433,33 +208,37 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
       form.validateFields().then(async (values) => {
         try {
           setLoading(true);
+          // ===== BUILD MANAGERS =====
+          const managers = values.manager.map((userName, index) => {
+            const u = dataUser.find((x) => x.value === userName);
+
+            return {
+              userId: u?.id,
+              userName: u?.value,
+              fullName: u?.label,
+              isPrimary: index === 0, // người đầu tiên là quản lý chính
+            };
+          });
           const payload = {
             ...values,
-            documentDate: monthYear.toISOString(),
+            nationalDefense: values.nationalDefense || 0,
+            economy: values.economy || 0,
+            nationalDefenseEconomy: values.nationalDefenseEconomy || 0,
             note: values.note || "",
-            details: tableData.map((item) => ({
-              content: item.content || "",
-              unit: item.unit || "",
-              quantity: Number(item.quantity) || 0,
-              workDay: Number(item.workDay) || 0,
-              note: item.note || "",
-            })),
+            managers,
           };
 
-          let res = await updatePayroll(
+          let res = await updatePayrollManager(
             initialValues.id,
-            payload.documentNumber,
             payload.productName,
-            payload.documentDate,
-            payload.department,
-            payload.managementUnit,
+            payload.nationalDefense,
+            payload.economy,
+            payload.nationalDefenseEconomy,
+            payload.payrollType,
             payload.note,
-            payload.details
+            managers
           );
           if (res && res.status === 200) {
-            if (isEditApproval) {
-              await handleUpdateApprovals();
-            }
             onSubmit();
             form.resetFields();
             setMonthYear(dayjs());
@@ -478,7 +257,7 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
               placement: isMobile ? "top" : "topRight",
             });
           }
-        } finally{
+        } finally {
           setLoading(false);
         }
       });
@@ -504,10 +283,12 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
     <>
       <Modal
         title={
-          <span style={{ 
-            fontSize: isMobile ? 18 : 25, 
-            fontWeight: 600 
-          }}>
+          <span
+            style={{
+              fontSize: isMobile ? 18 : 25,
+              fontWeight: 600,
+            }}
+          >
             {initialValues ? "Cập nhật phương tiện" : "Thêm phương tiện"}
           </span>
         }
@@ -526,13 +307,13 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
         style={isMobile ? { top: 20 } : {}}
         bodyStyle={isMobile ? { padding: "16px" } : {}}
       >
-        <Form 
-          form={form} 
+        <Form
+          form={form}
           layout="vertical"
           size={isMobile ? "small" : "default"}
         >
           <Row gutter={isMobile ? [8, 8] : [16, 16]}>
-            <Col span={colSpans.half}>
+            {/* <Col span={colSpans.half}>
               <Form.Item
                 name="documentNumber"
                 label="Số chứng từ"
@@ -540,7 +321,7 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
               >
                 <Input />
               </Form.Item>
-            </Col>
+            </Col> */}
             <Col span={colSpans.half}>
               <Form.Item
                 name="productName"
@@ -551,73 +332,73 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
               </Form.Item>
             </Col>
             <Col span={colSpans.half}>
-                <Form.Item
-                  name="economy"
-                  label="Loại quỹ lương"
-                  rules={[{ required: true, message: "Vui lòng chọn loại quỹ lương" }]}
+              <Form.Item
+                name="payrollType"
+                label="Loại quỹ lương"
+                rules={[
+                  { required: true, message: "Vui lòng chọn loại quỹ lương" },
+                ]}
+              >
+                <Select
+                  placeholder="Chọn loại quỹ lương"
+                  onChange={(value) => {
+                    setSalaryType(value);
+
+                    // Reset toàn bộ lương khi đổi loại
+                    form.setFieldsValue({
+                      nationalDefenseSalary: null,
+                      economySalary: null,
+                      nationalDefenseEconomySalary: null,
+                    });
+                  }}
                 >
-                  <Select
-                    placeholder="Chọn loại quỹ lương"
-                    onChange={(value) => {
-                      setSalaryType(value);
-
-                      // Reset toàn bộ lương khi đổi loại
-                      form.setFieldsValue({
-                        nationalDefenseSalary: null,
-                        economySalary: null,
-                        nationalDefenseEconomySalary: null,
-                      });
-                    }}
-                  >
-                    <Select.Option value="quoc-phong">Quốc phòng</Select.Option>
-                    <Select.Option value="kinh-te">Kinh tế</Select.Option>
-                    <Select.Option value="quoc-phong-kinh-te">
-                      Quốc phòng yếu tố kinh tế
-                    </Select.Option>
-                  </Select>
-                </Form.Item>
-
+                  <Select.Option value="nationalDefense">
+                    Quốc phòng
+                  </Select.Option>
+                  <Select.Option value="economy">Kinh tế</Select.Option>
+                  <Select.Option value="nationalDefenseEconomy">
+                    Quốc phòng yếu tố kinh tế
+                  </Select.Option>
+                </Select>
+              </Form.Item>
             </Col>
             {/* Lương Quốc phòng */}
-            {(salaryType === "quoc-phong" ) && (
+            {salaryType === "nationalDefense" && (
               <Col span={colSpans.half}>
                 <Form.Item
-                  name="nationalDefenseSalary"
+                  name="nationalDefense"
                   label="Lương Quốc phòng"
                   rules={[{ required: true, message: "Nhập lương quốc phòng" }]}
                 >
-                  <Input
-                    type="number"
-                    placeholder="Nhập lương quốc phòng"
-                  />
+                  <Input type="number" placeholder="Nhập lương quốc phòng" />
                 </Form.Item>
               </Col>
             )}
 
             {/* Lương Kinh tế */}
-            {(salaryType === "kinh-te" ) && (
+            {salaryType === "economy" && (
               <Col span={colSpans.half}>
                 <Form.Item
-                  name="economySalary"
+                  name="economy"
                   label="Lương Kinh tế"
                   rules={[{ required: true, message: "Nhập lương kinh tế" }]}
                 >
-                  <Input
-                    type="number"
-                    placeholder="Nhập lương kinh tế"
-                  />
+                  <Input type="number" placeholder="Nhập lương kinh tế" />
                 </Form.Item>
               </Col>
             )}
 
             {/* Lương Quốc phòng yếu tố kinh tế */}
-            {salaryType === "quoc-phong-kinh-te" && (
+            {salaryType === "nationalDefenseEconomy" && (
               <Col span={colSpans.half}>
                 <Form.Item
-                  name="nationalDefenseEconomySalary"
+                  name="nationalDefenseEconomy"
                   label="Lương Quốc phòng yếu tố kinh tế"
                   rules={[
-                    { required: true, message: "Nhập lương quốc phòng yếu tố kinh tế" },
+                    {
+                      required: true,
+                      message: "Nhập lương quốc phòng yếu tố kinh tế",
+                    },
                   ]}
                 >
                   <Input
@@ -628,7 +409,6 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
               </Col>
             )}
 
-
             <Col span={colSpans.half}>
               <Form.Item
                 name="manager"
@@ -636,13 +416,13 @@ const PayrollModal = ({ open, onCancel, onSubmit, initialValues }) => {
                 rules={[{ required: true }]}
               >
                 <Select
-                          options={dataUser}
-                          placeholder="Chọn người quản lý"
-                          showSearch
-                          optionFilterProp="label"
-                          disabled={!!initialValues}
-                          mode="multiple"
-                        />
+                  options={dataUser}
+                  placeholder="Chọn người quản lý"
+                  showSearch
+                  optionFilterProp="label"
+                  disabled={!!initialValues}
+                  mode="multiple"
+                />
               </Form.Item>
             </Col>
             <Col span={colSpans.half}>

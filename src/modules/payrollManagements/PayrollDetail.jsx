@@ -18,20 +18,23 @@ import {
   EditOutlined,
   PaperClipOutlined,
   DeleteOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons";
 import NoteSection from "../../components/NoteSection ";
 import AttachmentSection from "../../components/AttachmentSection ";
 import SystemSection from "../../components/SystemSection";
 import PayrollModal from "./PayrollModal";
 import {
-  deleteAssignmetSlip,
-  getAssignmentSlipById,
-} from "../../services/apiPlan/apiAssignmentSlip";
+  deletePayrollManager,
+  getPayrollManagerByID,
+  getEvaluationPayroll,
+} from "../../services/apiPayroll/Payroll";
 import dayjs from "dayjs";
 import { addAttachments } from "../../services/apiAttachment";
 import { useSelector } from "react-redux";
 import { getApprovalsByRef } from "../../services/apiApprovals";
 import { getApprovalSetting } from "../../services/apiApproveSetting";
+import AssessmentModal from "./AssessmentModal";
 
 const { Title } = Typography;
 const { Panel } = Collapse;
@@ -43,15 +46,16 @@ const PayrollDetail = () => {
   const queryParams = new URLSearchParams(location.search);
   const type = queryParams.get("type");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalReviewOpen, setIsModalReviewOpen] = useState(false);
   const [editingData, setEditingData] = useState(null);
+  const [editingEvaluationData, setEditingEvaluationData] = useState(null);
   const [data, setData] = useState();
-  const [approvals, setApproval] = useState();
-  const [approvalNumber, setApprovalNumber] = useState();
   const [refreshFlag, setRefreshFlag] = useState(0);
   const user = useSelector((state) => state.auth.login.currentUser);
   const navigator = useNavigate();
   const fileInputRef = useRef(null);
   const screens = useBreakpoint();
+  const [evaluationRows, setEvaluationRows] = useState([]);
 
   // Determine if mobile/tablet view
   const isMobile = !screens.md;
@@ -59,44 +63,38 @@ const PayrollDetail = () => {
 
   useEffect(() => {
     getData();
-    getApprovals();
-    getApprovalByModulePage();
   }, []);
 
-  const getApprovalByModulePage = async () => {
+  const getDetailPayroll = async (payrollId) => {
     try {
-      let res = await getApprovalSetting("PL", "pl-phieu-giao-viec");
-      if (res && res.status === 200) {
-        setApprovalNumber(res.data.data.approvalNumber);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
+      const res = await getEvaluationPayroll(payrollId);
+      const apiRows = (res.data.data || []).map((item) => ({
+        key: item.id,
+        id: item.id,
+        period: dayjs(`${item.year}-${item.month}-01`).format("MM/YYYY"),
+        score: item.score,
+        salary: item.amount,
+        note: item.comment,
+      }));
+      setEvaluationRows(apiRows);
 
-  const getApprovals = async () => {
-    try {
-      let res = await getApprovalsByRef(id, "PGV");
-      if (res && res.status === 200) {
-        setApproval(res.data.data);
-      }
-    } catch (error) {}
+      // ✅ KHÔNG recalculate khi load từ DB
+    } catch (error) {
+      message.error("Không tải được dữ liệu đánh giá");
+    }
   };
 
   const getData = async () => {
     try {
-      let res = await getPayrollById(id);
+      let res = await getPayrollManagerByID(id);
       if (res && res.status === 200) {
         setData(res.data.data);
+        getDetailPayroll(res.data.data.id);
       }
     } catch (error) {
       console.log(error);
     }
   };
-
-  const isEditDisabled = approvals?.some(
-    (a) => a.level === approvalNumber && a.status === "approved" && !type
-  );
 
   const items = [
     {
@@ -106,7 +104,14 @@ const PayrollDetail = () => {
           <EditOutlined /> Sửa
         </span>
       ),
-      disabled: isEditDisabled,
+    },
+    {
+      key: "assessment",
+      label: (
+        <span>
+          <CheckCircleOutlined /> Đánh giá
+        </span>
+      ),
     },
     {
       key: "attach",
@@ -123,7 +128,6 @@ const PayrollDetail = () => {
           <DeleteOutlined /> Xóa
         </span>
       ),
-      disabled: isEditDisabled,
     },
   ];
 
@@ -142,13 +146,13 @@ const PayrollDetail = () => {
       fileInputRef.current?.click();
     } else if (key === "delete") {
       try {
-        let res = await deleteAssignmetSlip(data.id);
+        let res = await deletePayrollManager(data.id);
         if ((res && res.status === 200) || res.status === 204) {
           Modal.success({
             title: "Xóa thành công",
             content: `Đã xóa thành công phiếu`,
           });
-          navigator("/pl/phieu-giao-viec");
+          navigator("/fn/payroll-managent");
         }
       } catch (error) {
         Modal.error({
@@ -157,52 +161,59 @@ const PayrollDetail = () => {
         });
       }
     }
+    if (key === "assessment") {
+      if (type) {
+        setEditingEvaluationData({
+          ...data,
+          ...evaluationRows,
+          type: type,
+        });
+      } else {
+        setEditingEvaluationData(data);
+      }
+      setIsModalReviewOpen(true);
+    }
   };
 
   // Responsive columns for table
   const getColumns = () => {
     const baseColumns = [
-      { 
-        title: "STT", 
-        dataIndex: "stt", 
+      {
+        title: "STT",
+        dataIndex: "stt",
         width: isMobile ? 50 : 60,
-        fixed: isMobile ? 'left' : false
+        fixed: isMobile ? "left" : false,
       },
-      { 
-        title: "Nội dung", 
-        dataIndex: "content",
+      {
+        title: "Đợt (Tháng/Năm)",
+        dataIndex: "period",
         width: isMobile ? 200 : undefined,
-        onCell: () => ({
-          style: { 
-            whiteSpace: "normal", 
-            wordWrap: "break-word", 
-            maxWidth: isMobile ? 200 : 500
-          },
-        }),
+        fixed: isMobile ? "left" : false,
       },
-      { 
-        title: "ĐVT", 
-        dataIndex: "unit",
-        width: isMobile ? 80 : undefined
+      {
+        title: "Đánh giá (1–10)",
+        dataIndex: "score",
+        width: isMobile ? 80 : undefined,
       },
-      { 
-        title: "SL", 
-        dataIndex: "quantity",
-        width: isMobile ? 60 : undefined
+      {
+        title: "Lương theo đánh giá (VNĐ)",
+        dataIndex: "salary",
+        width: isMobile ? 150 : undefined,
+        render: (v) => v.toLocaleString("vi-VN"),
       },
-      { 
-        title: "N/Công", 
-        dataIndex: "workDay",
-        width: isMobile ? 80 : undefined
-      },
-      { 
-        title: "Ghi chú", 
+      {
+        title: "Nhận xét",
         dataIndex: "note",
-        width: isMobile ? 150 : undefined
+        width: isMobile ? 150 : undefined,
       },
     ];
 
     return baseColumns;
+  };
+
+  const formatMoney = (value) => {
+    if (value === null || value === undefined) return "";
+    return Number(value).toLocaleString("vi-VN");
   };
 
   // Responsive info rendering
@@ -210,17 +221,30 @@ const PayrollDetail = () => {
     if (isMobile) {
       return (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <div><strong>Số chứng từ:</strong> {data.documentNumber || ""}</div>
-          <div><strong>Tên sản phẩm:</strong> {data.productName || ""}</div>
           <div>
-            <strong>Ngày chứng từ:</strong>{" "}
-            {data.documentDate
-              ? new Date(data.documentDate).toLocaleDateString("vi-VN")
-              : "---"}
+            <strong>Tên sản phẩm:</strong> {data.productName || ""}
           </div>
-          <div><strong>Đơn bị quản lý:</strong> {data.documentNumber || ""}</div>
-          <div><strong>Bộ phận:</strong> {data.department || ""}</div>
-          <div><strong>Ghi chú:</strong> {data.note || ""}</div>
+          <div>
+            <strong>Quốc phòng:</strong> {formatMoney(data.nationalDefense)} vnđ
+          </div>
+          <div>
+            <strong>Kinh tế:</strong> {formatMoney(data.economy)} vnđ
+          </div>
+          <div>
+            <strong>Quốc phòng yếu tố kinh tế:</strong>{" "}
+            {formatMoney(data.nationalDefenseEconomy)} vnđ
+          </div>
+          <div>
+            <strong>Quỹ lương còn lại:</strong>{" "}
+            {formatMoney(data.remainingFund)} vnđ
+          </div>
+
+          <div>
+            <strong>Người quản lý:</strong> {data.managers || ""}
+          </div>
+          <div>
+            <strong>Ghi chú:</strong> {data.note || ""}
+          </div>
         </Space>
       );
     }
@@ -228,104 +252,58 @@ const PayrollDetail = () => {
     return (
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={24} md={12} lg={12} xl={12}>
-          <Space
-            direction="vertical"
-            size="small"
-            style={{ width: "100%" }}
-          >
-            <div><strong>Số chứng từ:</strong> {data.documentNumber || ""}</div>
-            <div><strong>Tên sản phẩm:</strong> {data.productName || ""}</div>
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <div>
-              <strong>Ngày chứng từ:</strong>{" "}
-              {data.documentDate
-                ? new Date(data.documentDate).toLocaleDateString("vi-VN")
-                : "---"}
+              <strong>Tên sản phẩm:</strong> {data.productName || ""}
+            </div>
+            <div>
+              <strong>Quốc phòng:</strong> {formatMoney(data.nationalDefense)}{" "}
+              vnđ
+            </div>
+            <div>
+              <strong>Kinh tế:</strong> {formatMoney(data.economy)} vnđ
+            </div>
+            <div>
+              <strong>Quốc phòng yếu tố kinh tế:</strong>{" "}
+              {formatMoney(data.nationalDefenseEconomy)} vnđ
             </div>
           </Space>
         </Col>
         <Col xs={24} sm={24} md={12} lg={12} xl={12}>
-          <Space
-            direction="vertical"
-            size="small"
-            style={{ width: "100%" }}
-          >
-            <div><strong>Đơn bị quản lý:</strong> {data.documentNumber || ""}</div>
-            <div><strong>Bộ phận:</strong> {data.department || ""}</div>
-            <div><strong>Ghi chú:</strong> {data.note || ""}</div>
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <div>
+              <strong>Quỹ lương còn lại:</strong>{" "}
+              {formatMoney(data.remainingFund)} vnđ
+            </div>
+            <div>
+              <strong>Người quản lý:</strong> {data.managers || ""}
+            </div>
+            <div>
+              <strong>Ghi chú:</strong> {data.note || ""}
+            </div>
           </Space>
         </Col>
-      </Row>
-    );
-  };
-
-  // Responsive approval section
-  const renderApprovalSection = () => {
-    if (!approvals?.length) return null;
-
-    if (isMobile) {
-      return (
-        <div style={{ marginTop: 16 }}>
-          {approvals.map((item, index) => (
-            <div key={index} style={{ marginBottom: 16, padding: 12, border: '1px solid #d9d9d9', borderRadius: 6 }}>
-              <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                <div><strong>Người duyệt {index + 1}:</strong> {item.fullName}</div>
-                <div>
-                  <strong>Trạng thái duyệt {index + 1}:</strong>{" "}
-                  {item.status === "rejected"
-                    ? "Từ chối"
-                    : item.status === "approved"
-                    ? "Đã duyệt"
-                    : "Chờ duyệt"}
-                </div>
-                <div><strong>Ghi chú người duyệt {index + 1}:</strong> {item.note || ""}</div>
-              </Space>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    return (
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        {approvals.map((item, index) => (
-          <Col xs={24} sm={24} md={12} lg={12} xl={12} key={index}>
-            <Space
-              direction="vertical"
-              size="small"
-              style={{ width: "100%" }}
-            >
-              <div><strong>Người duyệt {index + 1}:</strong> {item.fullName}</div>
-              <div>
-                <strong>Trạng thái duyệt {index + 1}:</strong>{" "}
-                {item.status === "rejected"
-                  ? "Từ chối"
-                  : item.status === "approved"
-                  ? "Đã duyệt"
-                  : "Chờ duyệt"}
-              </div>
-              <div><strong>Ghi chú người duyệt {index + 1}:</strong> {item.note || ""}</div>
-            </Space>
-          </Col>
-        ))}
       </Row>
     );
   };
 
   return (
-    <div style={{ 
-      padding: isMobile ? 8 : 16,
-      minHeight: '100vh'
-    }}>
+    <div
+      style={{
+        padding: isMobile ? 8 : 16,
+        minHeight: "100vh",
+      }}
+    >
       <Row justify="space-between" align="middle" gutter={[16, 16]}>
         <Col xs={24} sm={16} md={18} lg={20}>
-          <Title 
+          <Title
             level={isMobile ? 4 : 3}
-            style={{ 
+            style={{
               margin: 0,
-              fontSize: isMobile ? '18px' : undefined
+              fontSize: isMobile ? "18px" : undefined,
             }}
           >
-            Xem chi tiết phiếu giao việc
+            Xem chi tiết đánh giá quỹ lương
           </Title>
         </Col>
         <Col xs={24} sm={8} md={6} lg={4}>
@@ -334,9 +312,9 @@ const PayrollDetail = () => {
             trigger={["click"]}
             placement={isMobile ? "bottomRight" : "bottom"}
           >
-            <Button 
-              style={{ width: isMobile ? '100%' : 'auto' }}
-              size={isMobile ? 'middle' : 'middle'}
+            <Button
+              style={{ width: isMobile ? "100%" : "auto" }}
+              size={isMobile ? "middle" : "middle"}
             >
               Hoạt động <DownOutlined />
             </Button>
@@ -350,27 +328,22 @@ const PayrollDetail = () => {
         expandIconPosition="end"
         size={isMobile ? "small" : "middle"}
       >
-        <Panel header="Thông tin phiếu giao việc" key="1">
-          {data && (
-            <>
-              {renderInfoSection()}
-              {renderApprovalSection()}
-            </>
-          )}
+        <Panel header="Thông tin quỹ lương" key="1">
+          {data && <>{renderInfoSection()}</>}
         </Panel>
 
-        <Panel header="Nội dung phiếu giao việc" key="2">
+        <Panel header="Nội dung đánh giá" key="2">
           {data && (
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: "auto" }}>
               <Table
                 columns={getColumns()}
-                dataSource={data.details?.map((item, index) => ({
+                dataSource={evaluationRows?.map((item, index) => ({
                   ...item,
                   stt: index + 1,
                 }))}
-                scroll={{ 
-                  x: isMobile ? 600 : 'max-content',
-                  y: isMobile ? 300 : undefined
+                scroll={{
+                  x: isMobile ? 600 : "max-content",
+                  y: isMobile ? 300 : undefined,
                 }}
                 size="small"
                 bordered
@@ -384,14 +357,14 @@ const PayrollDetail = () => {
                           backgroundColor: "#e6f4fb",
                           color: "#0700ad",
                           fontWeight: "600",
-                          fontSize: isMobile ? '12px' : '14px'
+                          fontSize: isMobile ? "12px" : "14px",
                         }}
                       />
                     ),
                   },
                 }}
                 style={{
-                  fontSize: isMobile ? '12px' : '14px'
+                  fontSize: isMobile ? "12px" : "14px",
                 }}
               />
             </div>
@@ -429,7 +402,7 @@ const PayrollDetail = () => {
               }}
               refId={data.id}
               refType={"Payroll"}
-              voucherNo={data.documentNumber}
+              voucherNo={data.productName || ""}
             />
           )}
         </Panel>
@@ -440,10 +413,19 @@ const PayrollDetail = () => {
         onCancel={() => setIsModalOpen(false)}
         onSubmit={() => {
           getData();
-          getApprovals();
           setIsModalOpen(false);
         }}
         initialValues={editingData}
+      />
+
+      <AssessmentModal
+        open={isModalReviewOpen}
+        onCancel={() => setIsModalReviewOpen(false)}
+        onSubmit={() => {
+          getData();
+          setIsModalReviewOpen(false);
+        }}
+        initialValues={editingEvaluationData}
       />
 
       <input

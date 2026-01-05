@@ -1,4 +1,4 @@
-export const url = "http://192.168.20.133:5000"
+export const url = "http://localhost:5251"
 
 //auth
 export const login = "/api/v1/Auth/login"
@@ -210,3 +210,25 @@ export const getshipRepairPlanByID = "/api/v1/khkd/shiprepairplan/"
 export const updateshipRepairPlan = "/api/v1/khkd/shiprepairplan/"
 export const deleteshipRepairPlan = "/api/v1/khkd/shiprepairplan/"
 export const filtershipRepairPlan = "/api/v1/khkd/shiprepairplan/filter"
+
+// payroll
+export const getPayrollBoard = "/api/payroll-managers/dashboard"
+export const getPayrollById = "/api/payroll-managers/"
+export const updatePayroll = "/api/payroll-managers/"
+export const getPayrollByFilter = "/api/payroll-managers/filter"
+export const createPayroll = "/api/payroll-managers"
+export const deletePayroll = "/api/payroll-managers/"
+export const payrollEvaluationApi = {
+  getByPayroll: (payrollId) =>
+    `/api/payroll-managers/${payrollId}/evaluations`,
+
+  create: (payrollId) =>
+    `/api/payroll-managers/${payrollId}/evaluations`,
+
+  update: (payrollId, id) =>
+    `/api/payroll-managers/${payrollId}/evaluations/${id}`,
+
+  delete: (payrollId, id) =>
+    `/api/payroll-managers/${payrollId}/evaluations/${id}`,
+};
+
